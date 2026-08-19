@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
-import { getAdminClient } from '../_lib/db';
+import { getAdminClient, getLoginClient } from '../_lib/db';
 import { handleError, Errors } from '../_lib/error';
 import { rateLimit, loginRateLimit } from '../_lib/rate-limit';
 import { loadUserAccess } from '../_lib/auth';
@@ -89,8 +89,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 代理登录 Supabase Auth（服务端凭据，不再由前端直连绕过）
-    const supabase = getAdminClient();
-    const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+    const loginClient = getLoginClient();
+    const { data: authData, error: authErr } = await loginClient.auth.signInWithPassword({
       email: emailNorm,
       password,
       options: {
@@ -118,12 +118,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const session = authData.session;
     const userId = authData.user?.id;
+    if (!session || !userId) throw Errors.unauthorized('登录失败，未能创建有效会话');
+    const supabase = getAdminClient();
     const { roles, permissions } = await loadUserAccess(supabase, userId);
     const { data: profile } = await supabase
       .from('profiles')
-      .select('display_name')
+      .select('display_name, is_active')
       .eq('id', userId)
       .maybeSingle();
+    if (profile && (profile as any).is_active === false) {
+      throw Errors.forbidden('账号已停用，请联系管理员');
+    }
 
     return res.status(200).json({
       session,

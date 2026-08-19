@@ -28,6 +28,11 @@ export interface UserAccess {
 const accessCache = new Map<string, { expireAt: number; roles: string[]; permissions: string[] }>();
 const CACHE_TTL_MS = 60 * 1000;
 
+export function invalidateUserAccess(userId?: string) {
+  if (userId) accessCache.delete(userId);
+  else accessCache.clear();
+}
+
 // 单次完整加载：user_roles -> roles -> role_permissions -> permissions。
 // 查询失败必须显性报错，禁止静默当成"无角色"（否则会误报 403 无权限）。
 async function loadUserAccessOnce(supabase: any, userId: string): Promise<UserAccess> {
@@ -110,9 +115,14 @@ export async function requireAuth(req: VercelRequest): Promise<AuthContext> {
   // 加载 profile
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, email, display_name')
+    .select('id, email, display_name, is_active')
     .eq('id', userId)
     .maybeSingle();
+  if (profile && (profile as any).is_active === false) {
+    // Treat a disabled account as an invalid session so the client clears the
+    // authenticated UI instead of remaining logged in with repeated 403s.
+    throw Errors.unauthorized('账号已停用，请联系管理员');
+  }
 
   // 加载角色与权限（带缓存 + 空结果抖动退避重试，见 loadUserAccess）
   const { roles, permissions } = await loadUserAccess(supabase, userId);

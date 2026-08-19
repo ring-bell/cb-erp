@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
-import { requireAuth } from '../_lib/auth';
+import { requireAuth, invalidateUserAccess } from '../_lib/auth';
 import { requirePermission } from '../_lib/rbac';
 import { parse, uuidSchema } from '../_lib/validation';
 import { getAdminClient } from '../_lib/db';
@@ -76,6 +76,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const { error: insErr } = await supabase.from('user_roles').insert(rows);
           if (insErr) throw insErr;
         }
+        invalidateUserAccess(id);
       }
 
       const after = await getProfileWithRoles(supabase, id);
@@ -91,6 +92,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (isSuperAdmin) throw Errors.badRequest('超级管理员不可删除');
       const { error: authErr } = await supabase.auth.admin.deleteUser(id);
       if (authErr) throw authErr;
+      invalidateUserAccess(id);
       await writeAudit(ctx, req, 'delete', 'user', id, before, null);
       return res.status(200).json({ ok: true });
     }

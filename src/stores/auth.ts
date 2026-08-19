@@ -83,7 +83,9 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = data.session?.user ?? null
     roles.value = data.roles ?? []
     permissions.value = data.permissions ?? []
-    user.value = { ...(user.value ?? {}), email: data.user?.email, user_metadata: { ...(user.value?.user_metadata ?? {}), name: data.user?.name } }
+    if (user.value) {
+      user.value = { ...user.value, email: data.user?.email, user_metadata: { ...user.value.user_metadata, name: data.user?.name } }
+    }
   }
 
   async function signOut() {
@@ -106,7 +108,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function hasPermission(perm: string): boolean {
-    return permissions.value.includes(perm)
+    return roles.value.includes('super_admin') || permissions.value.includes(perm)
   }
 
   return { session, user, roles, permissions, init, signIn, signOut, hasPermission }

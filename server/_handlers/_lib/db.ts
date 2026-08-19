@@ -18,3 +18,15 @@ export function getAdminClient(): SupabaseClient {
   }
   return client;
 }
+
+// Password login changes the client's in-memory auth session. Never perform it on
+// the shared service-role client: doing so can make concurrent admin queries run
+// with an end-user JWT (and consequently fail RLS checks or cross requests).
+export function getLoginClient(): SupabaseClient {
+  if (!url || !serviceKey) {
+    throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+  }
+  return createClient(url, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
