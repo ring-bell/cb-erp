@@ -3898,9 +3898,9 @@ var require_RealtimeChannel = __commonJS({
         const newPostgresBindings = [];
         for (let i = 0; i < bindingsLen; i++) {
           const clientPostgresBinding = clientPostgresBindings[i];
-          const { filter: { event, schema: schema2, table, filter } } = clientPostgresBinding;
+          const { filter: { event, schema: schema3, table, filter } } = clientPostgresBinding;
           const serverPostgresFilter = postgres_changes && postgres_changes[i];
-          if (serverPostgresFilter && serverPostgresFilter.event === event && _RealtimeChannel.isFilterValueEqual(serverPostgresFilter.schema, schema2) && _RealtimeChannel.isFilterValueEqual(serverPostgresFilter.table, table) && _RealtimeChannel.isFilterValueEqual(serverPostgresFilter.filter, filter)) {
+          if (serverPostgresFilter && serverPostgresFilter.event === event && _RealtimeChannel.isFilterValueEqual(serverPostgresFilter.schema, schema3) && _RealtimeChannel.isFilterValueEqual(serverPostgresFilter.table, table) && _RealtimeChannel.isFilterValueEqual(serverPostgresFilter.filter, filter)) {
             newPostgresBindings.push(Object.assign(Object.assign({}, clientPostgresBinding), { id: serverPostgresFilter.id }));
           } else {
             this.unsubscribe();
@@ -4402,9 +4402,9 @@ var require_RealtimeChannel = __commonJS({
         this.channelAdapter.updatePayloadTransform((event, payload, ref) => {
           if (typeof payload === "object" && "ids" in payload) {
             const postgresChanges = payload.data;
-            const { schema: schema2, table, commit_timestamp, type, errors } = postgresChanges;
+            const { schema: schema3, table, commit_timestamp, type, errors } = postgresChanges;
             const enrichedPayload = {
-              schema: schema2,
+              schema: schema3,
               table,
               commit_timestamp,
               eventType: type,
@@ -15672,10 +15672,10 @@ var PostgrestQueryBuilder = class {
   * )
   * ```
   */
-  constructor(url2, { headers = {}, schema: schema2, fetch: fetch$1, urlLengthLimit = 8e3, retry }) {
+  constructor(url2, { headers = {}, schema: schema3, fetch: fetch$1, urlLengthLimit = 8e3, retry }) {
     this.url = url2;
     this.headers = new Headers(headers);
-    this.schema = schema2;
+    this.schema = schema3;
     this.fetch = fetch$1;
     this.urlLengthLimit = urlLengthLimit;
     this.retry = retry;
@@ -17251,10 +17251,10 @@ var PostgrestClient = class PostgrestClient2 {
   * })
   * ```
   */
-  constructor(url2, { headers = {}, schema: schema2, fetch: fetch$1, timeout, urlLengthLimit = 8e3, retry } = {}) {
+  constructor(url2, { headers = {}, schema: schema3, fetch: fetch$1, timeout, urlLengthLimit = 8e3, retry } = {}) {
     this.url = url2;
     this.headers = new Headers(headers);
-    this.schemaName = schema2;
+    this.schemaName = schema3;
     this.urlLengthLimit = urlLengthLimit;
     const originalFetch = fetch$1 !== null && fetch$1 !== void 0 ? fetch$1 : globalThis.fetch;
     if (timeout !== void 0 && timeout > 0) this.fetch = (input, init) => {
@@ -17300,10 +17300,10 @@ var PostgrestClient = class PostgrestClient2 {
   *
   * @category Database
   */
-  schema(schema2) {
+  schema(schema3) {
     return new PostgrestClient2(this.url, {
       headers: this.headers,
-      schema: schema2,
+      schema: schema3,
       fetch: this.fetch,
       urlLengthLimit: this.urlLengthLimit,
       retry: this.retry
@@ -21390,8 +21390,8 @@ var SupabaseClient = class {
   *
   * @param schema - The schema to query
   */
-  schema(schema2) {
-    return this.rest.schema(schema2);
+  schema(schema3) {
+    return this.rest.schema(schema3);
   }
   /**
   * Perform a function call.
@@ -21573,6 +21573,14 @@ function getAdminClient() {
   }
   return client;
 }
+function getLoginClient() {
+  if (!url || !serviceKey) {
+    throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+  }
+  return createClient(url, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+}
 
 // server/_handlers/_lib/error.ts
 var ApiError = class extends Error {
@@ -21610,6 +21618,10 @@ function extractToken(req) {
 }
 var accessCache = /* @__PURE__ */ new Map();
 var CACHE_TTL_MS = 60 * 1e3;
+function invalidateUserAccess(userId) {
+  if (userId) accessCache.delete(userId);
+  else accessCache.clear();
+}
 async function loadUserAccessOnce(supabase, userId) {
   const roles = [];
   const permissionsSet = /* @__PURE__ */ new Set();
@@ -21659,7 +21671,10 @@ async function requireAuth(req) {
     throw Errors.unauthorized("\u767B\u5F55\u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55");
   }
   const userId = authData.user.id;
-  const { data: profile } = await supabase.from("profiles").select("id, email, display_name").eq("id", userId).maybeSingle();
+  const { data: profile } = await supabase.from("profiles").select("id, email, display_name, is_active").eq("id", userId).maybeSingle();
+  if (profile && profile.is_active === false) {
+    throw Errors.unauthorized("\u8D26\u53F7\u5DF2\u505C\u7528\uFF0C\u8BF7\u8054\u7CFB\u7BA1\u7406\u5458");
+  }
   const { roles, permissions } = await loadUserAccess(supabase, userId);
   return {
     userId,
@@ -21720,14 +21735,14 @@ async function handler2(req, res) {
     if (!oldPassword) throw Errors.badRequest("\u8BF7\u8F93\u5165\u539F\u5BC6\u7801");
     if (!newPassword) throw Errors.badRequest("\u8BF7\u8F93\u5165\u65B0\u5BC6\u7801");
     if (newPassword.length < 6) throw Errors.badRequest("\u65B0\u5BC6\u7801\u957F\u5EA6\u4E0D\u80FD\u5C11\u4E8E 6 \u4F4D");
-    const supabase = getAdminClient();
-    const { error: signErr } = await supabase.auth.signInWithPassword({
+    const { error: signErr } = await getLoginClient().auth.signInWithPassword({
       email: ctx.email,
       password: oldPassword
     });
     if (signErr) {
       throw Errors.badRequest("\u539F\u5BC6\u7801\u4E0D\u6B63\u786E");
     }
+    const supabase = getAdminClient();
     const { error: updateErr } = await supabase.auth.admin.updateUserById(ctx.userId, {
       password: newPassword
     });
@@ -24073,9 +24088,9 @@ var ZodArray = class _ZodArray extends ZodType {
     return this.min(1, message);
   }
 };
-ZodArray.create = (schema2, params) => {
+ZodArray.create = (schema3, params) => {
   return new ZodArray({
-    type: schema2,
+    type: schema3,
     minLength: null,
     maxLength: null,
     exactLength: null,
@@ -24083,30 +24098,30 @@ ZodArray.create = (schema2, params) => {
     ...processCreateParams(params)
   });
 };
-function deepPartialify(schema2) {
-  if (schema2 instanceof ZodObject) {
+function deepPartialify(schema3) {
+  if (schema3 instanceof ZodObject) {
     const newShape = {};
-    for (const key in schema2.shape) {
-      const fieldSchema = schema2.shape[key];
+    for (const key in schema3.shape) {
+      const fieldSchema = schema3.shape[key];
       newShape[key] = ZodOptional.create(deepPartialify(fieldSchema));
     }
     return new ZodObject({
-      ...schema2._def,
+      ...schema3._def,
       shape: () => newShape
     });
-  } else if (schema2 instanceof ZodArray) {
+  } else if (schema3 instanceof ZodArray) {
     return new ZodArray({
-      ...schema2._def,
-      type: deepPartialify(schema2.element)
+      ...schema3._def,
+      type: deepPartialify(schema3.element)
     });
-  } else if (schema2 instanceof ZodOptional) {
-    return ZodOptional.create(deepPartialify(schema2.unwrap()));
-  } else if (schema2 instanceof ZodNullable) {
-    return ZodNullable.create(deepPartialify(schema2.unwrap()));
-  } else if (schema2 instanceof ZodTuple) {
-    return ZodTuple.create(schema2.items.map((item) => deepPartialify(item)));
+  } else if (schema3 instanceof ZodOptional) {
+    return ZodOptional.create(deepPartialify(schema3.unwrap()));
+  } else if (schema3 instanceof ZodNullable) {
+    return ZodNullable.create(deepPartialify(schema3.unwrap()));
+  } else if (schema3 instanceof ZodTuple) {
+    return ZodTuple.create(schema3.items.map((item) => deepPartialify(item)));
   } else {
-    return schema2;
+    return schema3;
   }
 }
 var ZodObject = class _ZodObject extends ZodType {
@@ -24322,8 +24337,8 @@ var ZodObject = class _ZodObject extends ZodType {
   //   }) as any;
   //   return merged;
   // }
-  setKey(key, schema2) {
-    return this.augment({ [key]: schema2 });
+  setKey(key, schema3) {
+    return this.augment({ [key]: schema3 });
   }
   // merge<Incoming extends AnyZodObject>(
   //   merging: Incoming
@@ -24769,10 +24784,10 @@ var ZodTuple = class _ZodTuple extends ZodType {
       status.dirty();
     }
     const items = [...ctx.data].map((item, itemIndex) => {
-      const schema2 = this._def.items[itemIndex] || this._def.rest;
-      if (!schema2)
+      const schema3 = this._def.items[itemIndex] || this._def.rest;
+      if (!schema3)
         return null;
-      return schema2._parse(new ParseInputLazyPath(ctx, item, ctx.path, itemIndex));
+      return schema3._parse(new ParseInputLazyPath(ctx, item, ctx.path, itemIndex));
     }).filter((x) => !!x);
     if (ctx.common.async) {
       return Promise.all(items).then((results) => {
@@ -25286,9 +25301,9 @@ var ZodPromise = class extends ZodType {
     }));
   }
 };
-ZodPromise.create = (schema2, params) => {
+ZodPromise.create = (schema3, params) => {
   return new ZodPromise({
-    type: schema2,
+    type: schema3,
     typeName: ZodFirstPartyTypeKind.ZodPromise,
     ...processCreateParams(params)
   });
@@ -25416,17 +25431,17 @@ var ZodEffects = class extends ZodType {
     util.assertNever(effect);
   }
 };
-ZodEffects.create = (schema2, effect, params) => {
+ZodEffects.create = (schema3, effect, params) => {
   return new ZodEffects({
-    schema: schema2,
+    schema: schema3,
     typeName: ZodFirstPartyTypeKind.ZodEffects,
     effect,
     ...processCreateParams(params)
   });
 };
-ZodEffects.createWithPreprocess = (preprocess, schema2, params) => {
+ZodEffects.createWithPreprocess = (preprocess, schema3, params) => {
   return new ZodEffects({
-    schema: schema2,
+    schema: schema3,
     effect: { type: "preprocess", transform: preprocess },
     typeName: ZodFirstPartyTypeKind.ZodEffects,
     ...processCreateParams(params)
@@ -25873,8 +25888,8 @@ async function handler3(req, res) {
         error: { code: "CAPTCHA_INVALID", message: "\u4EBA\u673A\u9A8C\u8BC1\u5931\u8D25\uFF0C\u8BF7\u5237\u65B0\u9875\u9762\u540E\u91CD\u8BD5" }
       });
     }
-    const supabase = getAdminClient();
-    const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+    const loginClient = getLoginClient();
+    const { data: authData, error: authErr } = await loginClient.auth.signInWithPassword({
       email: emailNorm,
       password,
       options: {
@@ -25899,8 +25914,13 @@ async function handler3(req, res) {
     clearLoginFails(emailNorm);
     const session = authData.session;
     const userId = authData.user?.id;
+    if (!session || !userId) throw Errors.unauthorized("\u767B\u5F55\u5931\u8D25\uFF0C\u672A\u80FD\u521B\u5EFA\u6709\u6548\u4F1A\u8BDD");
+    const supabase = getAdminClient();
     const { roles, permissions } = await loadUserAccess(supabase, userId);
-    const { data: profile } = await supabase.from("profiles").select("display_name").eq("id", userId).maybeSingle();
+    const { data: profile } = await supabase.from("profiles").select("display_name, is_active").eq("id", userId).maybeSingle();
+    if (profile && profile.is_active === false) {
+      throw Errors.forbidden("\u8D26\u53F7\u5DF2\u505C\u7528\uFF0C\u8BF7\u8054\u7CFB\u7BA1\u7406\u5458");
+    }
     return res.status(200).json({
       session,
       user: {
@@ -25931,8 +25951,8 @@ function requireAnyPermission(ctx, permissions) {
 }
 
 // server/_handlers/_lib/validation.ts
-function parse(schema2, data) {
-  const r = schema2.safeParse(data);
+function parse(schema3, data) {
+  const r = schema3.safeParse(data);
   if (!r.success) {
     const msg = r.error.issues.map((i) => `${i.path.length ? i.path.join(".") + ": " : ""}${i.message}`).join("; ");
     throw new ApiError(400, "VALIDATION_ERROR", msg);
@@ -26540,6 +26560,19 @@ async function handler13(req, res) {
 }
 
 // server/_handlers/roles.ts
+var roleSchema = external_exports.object({
+  name: external_exports.string().trim().min(1).max(64).regex(/^[a-zA-Z0-9_-]+$/, "\u89D2\u8272\u540D\u683C\u5F0F\u9519\u8BEF"),
+  description: external_exports.string().trim().max(256).optional().default(""),
+  permissions: external_exports.array(external_exports.string().min(1).max(100)).default([])
+});
+async function permissionIds(supabase, codes) {
+  if (!codes.length) return [];
+  const unique = [...new Set(codes)];
+  const { data, error } = await supabase.from("permissions").select("id, code").in("code", unique);
+  if (error) throw error;
+  if ((data || []).length !== unique.length) throw Errors.badRequest("\u5305\u542B\u4E0D\u5B58\u5728\u7684\u6743\u9650\u7801");
+  return (data || []).map((item) => item.id);
+}
 async function handler14(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
@@ -26549,7 +26582,88 @@ async function handler14(req, res) {
       const supabase = getAdminClient();
       const { data, error } = await supabase.from("roles").select("*, role_permissions(permission_id, permissions(code))").order("name", { ascending: true });
       if (error) throw error;
-      return res.status(200).json({ data: data || [] });
+      const normalized = (data || []).map((role) => ({
+        ...role,
+        permissions: (role.role_permissions || []).map((item) => item.permissions).filter(Boolean)
+      }));
+      return res.status(200).json({ data: normalized });
+    }
+    if (req.method === "POST") {
+      requirePermission(ctx, "user.manage");
+      const parsed = roleSchema.safeParse(req.body || {});
+      if (!parsed.success) throw Errors.badRequest("\u8BF7\u6C42\u53C2\u6570\u9519\u8BEF");
+      const supabase = getAdminClient();
+      const ids = await permissionIds(supabase, parsed.data.permissions);
+      const { data: role, error } = await supabase.from("roles").insert({ name: parsed.data.name, description: parsed.data.description }).select().single();
+      if (error) throw error;
+      if (ids.length) {
+        const { error: mappingError } = await supabase.from("role_permissions").insert(ids.map((permission_id) => ({ role_id: role.id, permission_id })));
+        if (mappingError) {
+          await supabase.from("roles").delete().eq("id", role.id);
+          throw mappingError;
+        }
+      }
+      invalidateUserAccess();
+      return res.status(201).json({ data: role });
+    }
+    return res.status(405).json({ error: { code: "METHOD_NOT_ALLOWED", message: "Method not allowed" } });
+  } catch (e) {
+    return handleError2(res, e);
+  }
+}
+
+// server/_handlers/roles/[id].ts
+var schema2 = external_exports.object({
+  name: external_exports.string().trim().min(1).max(64).regex(/^[a-zA-Z0-9_-]+$/),
+  description: external_exports.string().trim().max(256).optional().default(""),
+  permissions: external_exports.array(external_exports.string().min(1).max(100)).default([])
+});
+var protectedRoles = /* @__PURE__ */ new Set(["super_admin", "admin", "manager", "operator"]);
+async function handler15(req, res) {
+  try {
+    rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
+    const ctx = await requireAuth(req);
+    requirePermission(ctx, "user.manage");
+    const id = String(req.query.id || "");
+    if (!external_exports.string().uuid().safeParse(id).success) throw Errors.badRequest("\u89D2\u8272 ID \u65E0\u6548");
+    const supabase = getAdminClient();
+    const { data: existing, error: findError } = await supabase.from("roles").select("id, name").eq("id", id).maybeSingle();
+    if (findError) throw findError;
+    if (!existing) throw Errors.notFound("\u89D2\u8272\u4E0D\u5B58\u5728");
+    if (req.method === "PATCH") {
+      const parsed = schema2.safeParse(req.body || {});
+      if (!parsed.success) throw Errors.badRequest("\u8BF7\u6C42\u53C2\u6570\u9519\u8BEF");
+      if (protectedRoles.has(existing.name) && parsed.data.name !== existing.name) {
+        throw Errors.badRequest("\u7CFB\u7EDF\u5185\u7F6E\u89D2\u8272\u4E0D\u80FD\u91CD\u547D\u540D");
+      }
+      const codes = [...new Set(parsed.data.permissions)];
+      let permissionIds2 = [];
+      if (codes.length) {
+        const { data, error } = await supabase.from("permissions").select("id, code").in("code", codes);
+        if (error) throw error;
+        if ((data || []).length !== codes.length) throw Errors.badRequest("\u5305\u542B\u4E0D\u5B58\u5728\u7684\u6743\u9650\u7801");
+        permissionIds2 = (data || []).map((item) => item.id);
+      }
+      const { error: updateError } = await supabase.from("roles").update({
+        name: parsed.data.name,
+        description: parsed.data.description
+      }).eq("id", id);
+      if (updateError) throw updateError;
+      const { error: deleteError } = await supabase.from("role_permissions").delete().eq("role_id", id);
+      if (deleteError) throw deleteError;
+      if (permissionIds2.length) {
+        const { error } = await supabase.from("role_permissions").insert(permissionIds2.map((permission_id) => ({ role_id: id, permission_id })));
+        if (error) throw error;
+      }
+      invalidateUserAccess();
+      return res.status(200).json({ data: { id, ...parsed.data } });
+    }
+    if (req.method === "DELETE") {
+      if (protectedRoles.has(existing.name)) throw Errors.badRequest("\u7CFB\u7EDF\u5185\u7F6E\u89D2\u8272\u4E0D\u80FD\u5220\u9664");
+      const { error } = await supabase.from("roles").delete().eq("id", id);
+      if (error) throw error;
+      invalidateUserAccess();
+      return res.status(204).end();
     }
     return res.status(405).json({ error: { code: "METHOD_NOT_ALLOWED", message: "Method not allowed" } });
   } catch (e) {
@@ -26570,7 +26684,7 @@ var createSchema5 = external_exports.object({
   currency: external_exports.string().max(8).optional(),
   items: external_exports.array(itemSchema3).min(1).max(200)
 });
-async function handler15(req, res) {
+async function handler16(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -26666,7 +26780,7 @@ var createSchema6 = external_exports.object({
   forwarder_id: external_exports.string().uuid().nullable().optional(),
   items: external_exports.array(itemSchema4).min(1).max(200)
 });
-async function handler16(req, res) {
+async function handler17(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -26730,7 +26844,7 @@ var createSchema7 = external_exports.object({
   to_warehouse_id: external_exports.string().uuid(),
   items: external_exports.array(itemSchema5).min(1).max(200)
 }).refine((v) => v.from_warehouse_id !== v.to_warehouse_id, { message: "\u8C03\u51FA\u4E0E\u8C03\u5165\u4ED3\u5E93\u4E0D\u80FD\u76F8\u540C" });
-async function handler17(req, res) {
+async function handler18(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -26791,7 +26905,7 @@ async function getProfileWithRoles(supabase, id) {
   }
   return data;
 }
-async function handler18(req, res) {
+async function handler19(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -26848,7 +26962,7 @@ var createSchema9 = external_exports.object({
   address: external_exports.string().max(300).nullable().optional(),
   wh_type: external_exports.enum(["domestic", "overseas"]).optional().default("domestic")
 });
-async function handler19(req, res) {
+async function handler20(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -26878,7 +26992,7 @@ async function handler19(req, res) {
 }
 
 // server/_handlers/dashboard.ts
-async function handler20(req, res) {
+async function handler21(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -26935,7 +27049,7 @@ var createSchema10 = external_exports.object({
   phone: external_exports.string().max(50).nullable().optional(),
   remark: external_exports.string().max(500).nullable().optional()
 });
-async function handler21(req, res) {
+async function handler22(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -26982,7 +27096,7 @@ var updateSchema = external_exports.object({
   remark: external_exports.string().max(500).nullable().optional(),
   is_active: external_exports.boolean().optional()
 });
-async function handler22(req, res) {
+async function handler23(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -27036,7 +27150,7 @@ var updateSchema2 = external_exports.object({
   status: external_exports.enum(["PENDING", "APPROVED", "PROCESSING", "COMPLETED", "REJECTED"]).optional(),
   result: external_exports.string().max(512).optional()
 }).refine((v) => v.status !== void 0 || v.result !== void 0, { message: "\u81F3\u5C11\u63D0\u4F9B\u4E00\u4E2A\u66F4\u65B0\u5B57\u6BB5" });
-async function handler23(req, res) {
+async function handler24(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -27108,7 +27222,7 @@ async function handler23(req, res) {
 }
 
 // server/_handlers/inventory/[id].ts
-async function handler24(req, res) {
+async function handler25(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -27145,7 +27259,7 @@ var adjustSchema = external_exports.object({
   reference_id: external_exports.string().uuid().nullable().optional(),
   note: external_exports.string().max(500).nullable().optional()
 });
-async function handler25(req, res) {
+async function handler26(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -27180,7 +27294,7 @@ async function handler25(req, res) {
 }
 
 // server/_handlers/inventory/transactions.ts
-async function handler26(req, res) {
+async function handler27(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -27231,7 +27345,7 @@ var updateSchema3 = external_exports.object({
   last_mile_delivery_peso: external_exports.coerce.number().min(0).optional(),
   ml_commission_rate: external_exports.coerce.number().min(0).max(1).optional()
 });
-async function handler27(req, res) {
+async function handler28(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -27303,7 +27417,7 @@ var updateSchema4 = external_exports.object({
     message: "\u81F3\u5C11\u63D0\u4F9B\u4E00\u4E2A\u66F4\u65B0\u5B57\u6BB5"
   }
 );
-async function handler28(req, res) {
+async function handler29(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -27422,7 +27536,7 @@ var updateSchema5 = external_exports.object({
 }).refine((v) => v.status !== void 0 || v.replenish_qty !== void 0 || v.replenishment_time !== void 0, {
   message: "\u81F3\u5C11\u63D0\u4F9B\u4E00\u4E2A\u66F4\u65B0\u5B57\u6BB5"
 });
-async function handler29(req, res) {
+async function handler30(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -27508,7 +27622,7 @@ var updateSchema6 = external_exports.object({
   status: external_exports.enum(["DRAFT", "CONFIRMED", "PAID", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"]).optional(),
   currency: external_exports.string().max(8).optional()
 });
-async function handler30(req, res) {
+async function handler31(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -27586,7 +27700,7 @@ var updateSchema7 = external_exports.object({
   bill_check_time: external_exports.string().datetime().nullable().optional(),
   appointment_time: external_exports.string().datetime().nullable().optional()
 });
-async function handler31(req, res) {
+async function handler32(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -27669,7 +27783,7 @@ var TRANSFER_FLOW = {
 var updateSchema8 = external_exports.object({
   status: external_exports.enum(["DRAFT", "APPROVED", "SHIPPED", "PARTIAL", "RECEIVED", "CANCELLED"])
 });
-async function handler32(req, res) {
+async function handler33(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -27778,7 +27892,7 @@ async function getProfileWithRoles2(supabase, id) {
   }
   return data;
 }
-async function handler33(req, res) {
+async function handler34(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -27816,6 +27930,7 @@ async function handler33(req, res) {
           const { error: insErr } = await supabase.from("user_roles").insert(rows);
           if (insErr) throw insErr;
         }
+        invalidateUserAccess(id);
       }
       const after = await getProfileWithRoles2(supabase, id);
       await writeAudit(ctx, req, "update", "user", id, null, after);
@@ -27829,6 +27944,7 @@ async function handler33(req, res) {
       if (isSuperAdmin) throw Errors.badRequest("\u8D85\u7EA7\u7BA1\u7406\u5458\u4E0D\u53EF\u5220\u9664");
       const { error: authErr } = await supabase.auth.admin.deleteUser(id);
       if (authErr) throw authErr;
+      invalidateUserAccess(id);
       await writeAudit(ctx, req, "delete", "user", id, before, null);
       return res.status(200).json({ ok: true });
     }
@@ -27846,7 +27962,7 @@ var updateSchema10 = external_exports.object({
   is_active: external_exports.boolean().optional(),
   wh_type: external_exports.enum(["domestic", "overseas"]).optional()
 });
-async function handler34(req, res) {
+async function handler35(req, res) {
   try {
     rateLimit((req.headers["x-forwarded-for"] || "unknown") + ":" + (req.url || ""));
     const ctx = await requireAuth(req);
@@ -27893,39 +28009,40 @@ var routes = [
   { pattern: /^\/auth\/login$/, handler: handler3 },
   { pattern: /^\/auth\/password$/, handler: handler2 },
   { pattern: /^\/auth\/me$/, handler },
-  { pattern: /^\/dashboard\/stats$/, handler: handler20 },
-  { pattern: /^\/forwarders\/([^/]+)$/, handler: handler22, params: ["id"] },
-  { pattern: /^\/forwarders$/, handler: handler21 },
-  { pattern: /^\/after-sales\/([^/]+)$/, handler: handler23, params: ["id"] },
+  { pattern: /^\/dashboard\/stats$/, handler: handler21 },
+  { pattern: /^\/forwarders\/([^/]+)$/, handler: handler23, params: ["id"] },
+  { pattern: /^\/forwarders$/, handler: handler22 },
+  { pattern: /^\/after-sales\/([^/]+)$/, handler: handler24, params: ["id"] },
   { pattern: /^\/after-sales$/, handler: handler4 },
   { pattern: /^\/audit-logs$/, handler: handler5 },
   { pattern: /^\/db-usage$/, handler: handler6 },
-  { pattern: /^\/inventory\/adjust$/, handler: handler25 },
-  { pattern: /^\/inventory\/transactions$/, handler: handler26 },
-  { pattern: /^\/inventory\/([^/]+)$/, handler: handler24, params: ["id"] },
+  { pattern: /^\/inventory\/adjust$/, handler: handler26 },
+  { pattern: /^\/inventory\/transactions$/, handler: handler27 },
+  { pattern: /^\/inventory\/([^/]+)$/, handler: handler25, params: ["id"] },
   { pattern: /^\/inventory$/, handler: handler7 },
   { pattern: /^\/permissions$/, handler: handler8 },
   { pattern: /^\/products\/batch-delete$/, handler: handler10 },
   { pattern: /^\/products\/upload-image$/, handler: handler11 },
-  { pattern: /^\/products\/([^/]+)$/, handler: handler27, params: ["id"] },
+  { pattern: /^\/products\/([^/]+)$/, handler: handler28, params: ["id"] },
   { pattern: /^\/products$/, handler: handler9 },
-  { pattern: /^\/purchase-orders\/([^/]+)$/, handler: handler28, params: ["id"] },
+  { pattern: /^\/purchase-orders\/([^/]+)$/, handler: handler29, params: ["id"] },
   { pattern: /^\/purchase-orders$/, handler: handler12 },
-  { pattern: /^\/replenishment\/([^/]+)$/, handler: handler29, params: ["id"] },
+  { pattern: /^\/replenishment\/([^/]+)$/, handler: handler30, params: ["id"] },
   { pattern: /^\/replenishment$/, handler: handler13 },
   { pattern: /^\/roles$/, handler: handler14 },
-  { pattern: /^\/sales\/([^/]+)$/, handler: handler30, params: ["id"] },
-  { pattern: /^\/sales$/, handler: handler15 },
-  { pattern: /^\/shipments\/([^/]+)$/, handler: handler31, params: ["id"] },
-  { pattern: /^\/shipments$/, handler: handler16 },
-  { pattern: /^\/transfers\/([^/]+)$/, handler: handler32, params: ["id"] },
-  { pattern: /^\/transfers$/, handler: handler17 },
-  { pattern: /^\/users\/([^/]+)$/, handler: handler33, params: ["id"] },
-  { pattern: /^\/users$/, handler: handler18 },
-  { pattern: /^\/warehouses\/([^/]+)$/, handler: handler34, params: ["id"] },
-  { pattern: /^\/warehouses$/, handler: handler19 }
+  { pattern: /^\/roles\/([^/]+)$/, handler: handler15, params: ["id"] },
+  { pattern: /^\/sales\/([^/]+)$/, handler: handler31, params: ["id"] },
+  { pattern: /^\/sales$/, handler: handler16 },
+  { pattern: /^\/shipments\/([^/]+)$/, handler: handler32, params: ["id"] },
+  { pattern: /^\/shipments$/, handler: handler17 },
+  { pattern: /^\/transfers\/([^/]+)$/, handler: handler33, params: ["id"] },
+  { pattern: /^\/transfers$/, handler: handler18 },
+  { pattern: /^\/users\/([^/]+)$/, handler: handler34, params: ["id"] },
+  { pattern: /^\/users$/, handler: handler19 },
+  { pattern: /^\/warehouses\/([^/]+)$/, handler: handler35, params: ["id"] },
+  { pattern: /^\/warehouses$/, handler: handler20 }
 ];
-async function handler35(req, res) {
+async function handler36(req, res) {
   try {
     const url2 = new URL(req.url || "/", "http://internal");
     const path = url2.pathname.replace(/^\/api/, "") || "/";
@@ -27948,5 +28065,5 @@ async function handler35(req, res) {
   }
 }
 export {
-  handler35 as default
+  handler36 as default
 };
